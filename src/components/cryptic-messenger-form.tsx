@@ -34,13 +34,19 @@ export default function CrypticMessengerForm() {
   const { toast } = useToast();
 
   const generateRandomKey = useCallback(() => {
-    let randomKey = "";
-    for (let i = 0; i < 26; i++) {
-      randomKey += Math.floor(Math.random() * 10).toString();
-    }
-    setKey(randomKey);
-    // Don't clear error here, applyCipher will validate the new key
-  }, []);
+    const constantShiftDigit = Math.floor(Math.random() * 10); // Generates a number from 0 to 9
+    const newKey = String(constantShiftDigit).repeat(26); // Creates a string like "333...3"
+    
+    setKey(newKey);
+    setError(null); // This key type is guaranteed to be a permutation.
+    
+    toast({
+      title: "Valid Key Generated",
+      description: `A new key using a constant shift of ${constantShiftDigit} has been set. This key is guaranteed to be reversible.`,
+      variant: "default",
+      duration: 6000, 
+    });
+  }, [toast]);
 
   useEffect(() => {
     if (mode === "encode" && key === "") {
@@ -59,13 +65,9 @@ export default function CrypticMessengerForm() {
       setResult("");
       return;
     }
-    // Clear format-related error if previous check passes
-    // Semantic error for non-permutation key will be set below if needed
-    // setError(null); // This might clear a valid non-permutation error too soon.
 
     const keyDigits = key.split("").map(Number);
 
-    // Validate if the key creates a permutation (reversible cipher)
     const forwardMapValues = new Array(ALPHABET.length);
     for (let i = 0; i < ALPHABET.length; i++) {
       const shift = keyDigits[i];
@@ -80,7 +82,7 @@ export default function CrypticMessengerForm() {
       setError(newError);
       toast({
         title: "Invalid Key for Reversible Cipher",
-        description: "The current key creates ambiguities, making perfect decryption impossible. Please generate a new key.",
+        description: "The current key creates ambiguities, making perfect decryption impossible. Please generate a new key or use a different one.",
         variant: "destructive",
         duration: 7000,
       });
@@ -88,19 +90,18 @@ export default function CrypticMessengerForm() {
       return;
     }
 
-    // If we reach here, the key is valid and produces a permutation.
-    setError(null); // Clear any errors
+    setError(null); 
 
     const encodeMap = new Map<string, string>();
     const decodeMap = new Map<string, string>();
 
     for (let i = 0; i < ALPHABET.length; i++) {
       const originalChar = ALPHABET[i];
-      const encodedCharIndex = forwardMapValues[i]; // Use the precomputed, validated map
+      const encodedCharIndex = forwardMapValues[i]; 
       const encodedChar = ALPHABET[encodedCharIndex];
       
       encodeMap.set(originalChar, encodedChar);
-      decodeMap.set(encodedChar, originalChar); // Guaranteed unique because it's a permutation
+      decodeMap.set(encodedChar, originalChar); 
     }
     
     let output = "";
@@ -154,7 +155,6 @@ export default function CrypticMessengerForm() {
               onValueChange={(value: "encode" | "decode") => {
                 setMode(value);
                 setResult(""); 
-                // setError(null); // Error will be re-evaluated by applyCipher if key is problematic
                 if (value === 'encode' && key === "") {
                   generateRandomKey();
                 }
@@ -180,10 +180,7 @@ export default function CrypticMessengerForm() {
           {mode === "encode" && (
             <Button
               onClick={() => {
-                generateRandomKey();
-                // When generating a new key, we expect applyCipher to validate it next.
-                // If the old key had an error, this new key might too.
-                // setError(null); // Let applyCipher manage the error state.
+                generateRandomKey(); // This will now set a valid key and clear errors
               }}
               variant="outline"
               className="w-full sm:w-auto justify-self-start sm:justify-self-end rounded-md border-primary text-primary hover:bg-primary/10"
@@ -205,10 +202,7 @@ export default function CrypticMessengerForm() {
               const val = e.target.value.replace(/[^0-9]/g, ''); 
               if (val.length <= 26) {
                 setKey(val);
-                // If key changes, previous error about this key might not be valid.
-                // However, the new key might also be invalid.
-                // Validation will occur in applyCipher.
-                // if (error) setError(null); // Tentatively clear, applyCipher will re-set if needed
+                // Error state will be managed by applyCipher or generateRandomKey
               }
             }}
             maxLength={26}
@@ -252,4 +246,3 @@ export default function CrypticMessengerForm() {
     </Card>
   );
 }
-
