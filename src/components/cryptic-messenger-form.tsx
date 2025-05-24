@@ -20,7 +20,13 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Lock, Unlock, Shuffle, AlertTriangle } from "lucide-react";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
+import { Lock, Unlock, Shuffle, AlertTriangle, Info } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 const ALPHABET = "abcdefghijklmnopqrstuvwxyz";
@@ -42,7 +48,7 @@ export default function CrypticMessengerForm() {
     toast({
       title: "New Random Key Generated",
       description:
-        "This key will be used with a sequential scrambling cipher method, which is always reversible.",
+        "This key uses a sequential scrambling cipher method, which is always reversible.",
       variant: "default",
       duration: 5000,
     });
@@ -65,38 +71,56 @@ export default function CrypticMessengerForm() {
       setResult("");
       return;
     }
-    setError(null); // Clear format error if key is now valid
+    setError(null);
 
     const keyDigits = key.split("").map(Number);
-    const originalAlphabetArray = ALPHABET.split('');
-    let scrambledAlphabetChars = [...originalAlphabetArray];
+    let scrambledAlphabetChars = ALPHABET.split('');
 
-    // Sequentially scramble the alphabet
+    // Sequentially scramble the alphabet based on the user's description
     for (let i = 0; i < ALPHABET.length; i++) {
-      const letterToMove = ALPHABET[i]; // The original i-th letter (e.g., 'a', then 'b', ...)
+      const originalLetterToMove = ALPHABET[i];
       const shiftAmount = keyDigits[i];
 
-      const currentIndexInScrambled = scrambledAlphabetChars.indexOf(letterToMove);
+      const currentIndexInScrambled = scrambledAlphabetChars.indexOf(originalLetterToMove);
       if (currentIndexInScrambled === -1) {
-        // This should not happen if logic is correct
-        setError("Cipher logic error: letter not found during scrambling.");
-        toast({ title: "Cipher Error", description: "An internal error occurred.", variant: "destructive" });
+        // This should ideally not happen if logic is correct and array is managed properly
+        setError(`Cipher logic error: letter ${originalLetterToMove} not found during scrambling.`);
+        toast({ title: "Cipher Error", description: "An internal error occurred during alphabet scrambling.", variant: "destructive" });
         setResult("");
         return;
       }
 
-      // Remove the letter from its current position
-      scrambledAlphabetChars.splice(currentIndexInScrambled, 1);
+      // Remove the letter from its current position in the evolving scrambled list
+      const letterToActuallyMove = scrambledAlphabetChars.splice(currentIndexInScrambled, 1)[0];
 
-      // Calculate new index for insertion (in the array of 25 letters)
+      // Calculate new index for insertion (in the array of now 25 letters)
+      // The modulo operation ensures wrapping around the (now smaller) array.
       const newInsertionIndex = (currentIndexInScrambled + shiftAmount) % scrambledAlphabetChars.length;
-      
+
       // Insert the letter at the new position
-      scrambledAlphabetChars.splice(newInsertionIndex, 0, letterToMove);
+      // If newInsertionIndex is 0 and shiftAmount was also 0 (or multiple of 25), 
+      // and it was removed from index 0, it means it should be placed at the end
+      // if the intent is "move 0 means it lands at the end of the 25-char list before reinsertion".
+      // However, typical modulo arithmetic (current_pos + shift) % N places it within 0 to N-1.
+      // If the target index is the length of the array, it means it should be appended.
+      if (newInsertionIndex === 0 && scrambledAlphabetChars.length > 0) {
+         // If target is 0, but we removed a letter, current list is 25.
+         // (original_index + shift) % 25. E.g., if original_index + shift was 25, result is 0.
+         // This needs to be thought through carefully for edge cases.
+         // The provided example "bcadef..." for A moving 2 implies new position 2.
+         // 'a' at index 0, shift 2. (0+2) % 25 = 2. Insert at 2. [b,c,a,d,e...]
+         // 'b' at index 0 (in "cbadef..."), shift 1. (0+1)%24 = 1. Insert at 1. [c,b,a,d,e...] -> Correct for "cbadef"
+         // 'c' at index 0 (in "badefc..."), shift 5. (0+5)%23 = 5. Insert at 5. [b,a,d,e,f,c,...] -> Correct for "badefc"
+         scrambledAlphabetChars.splice(newInsertionIndex, 0, letterToActuallyMove);
+      } else if (scrambledAlphabetChars.length === 0) { // last letter being placed
+        scrambledAlphabetChars.push(letterToActuallyMove);
+      }
+      else {
+        scrambledAlphabetChars.splice(newInsertionIndex, 0, letterToActuallyMove);
+      }
     }
 
     const finalScrambledAlphabet = scrambledAlphabetChars.join('');
-
     const encodeMap = new Map<string, string>();
     const decodeMap = new Map<string, string>();
 
@@ -123,16 +147,18 @@ export default function CrypticMessengerForm() {
       output += processedChar;
     }
     setResult(output);
+
   }, [message, key, mode, toast]);
+
 
   return (
     <Card className="w-full max-w-xl shadow-xl rounded-lg">
       <CardHeader className="text-center">
         <CardTitle className="text-3xl font-semibold text-primary">
-          Cryptic Messenger
+          Caesar's Sister Cipher
         </CardTitle>
         <CardDescription className="text-muted-foreground">
-          Encode and decode your messages with a custom cipher.
+          Encode and decode messages with your unique key.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6 p-6">
@@ -156,7 +182,7 @@ export default function CrypticMessengerForm() {
               onValueChange={(value: "encode" | "decode") => {
                 setMode(value);
                 setResult("");
-                setError(null); 
+                setError(null);
                 if (value === 'encode' && key === "") {
                   generateRandomKey();
                 }
@@ -202,16 +228,20 @@ export default function CrypticMessengerForm() {
               const val = e.target.value.replace(/[^0-9]/g, "");
               if (val.length <= 26) {
                 setKey(val);
-                setError(null); 
+                if (val.length === 26) {
+                    setError(null);
+                } else {
+                    setError("Key must be 26 digits.");
+                }
               }
             }}
             maxLength={26}
-            className={`rounded-md border-input focus:ring-ring focus:border-primary font-mono ${error ? 'border-destructive focus:border-destructive' : ''}`}
+            className={`rounded-md border-input focus:ring-ring focus:border-primary font-mono ${error && key.length !== 26 ? 'border-destructive focus:border-destructive' : ''}`}
             aria-label="Cipher key, 26 digits"
-            aria-invalid={!!error}
+            aria-invalid={!!(error && key.length !== 26)}
             aria-describedby="key-error"
           />
-          {error && (
+          {error && key.length !==26 && (
             <p id="key-error" className="flex items-center text-sm text-destructive mt-1">
               <AlertTriangle className="mr-1 h-4 w-4" /> {error}
             </p>
@@ -242,6 +272,31 @@ export default function CrypticMessengerForm() {
             aria-label="Result of encoding or decoding"
           />
         </div>
+
+        <Accordion type="single" collapsible className="w-full pt-4">
+          <AccordionItem value="how-it-works">
+            <AccordionTrigger className="text-base hover:no-underline">
+              <div className="flex items-center">
+                <Info className="mr-2 h-5 w-5 text-primary" />
+                How Caesar's Sister Cipher Works
+              </div>
+            </AccordionTrigger>
+            <AccordionContent className="text-sm text-muted-foreground space-y-3 pt-2">
+              <p>Caesar's Sister is a substitution cipher that uses a 26-digit key to create a unique scrambled alphabet. Here's the process:</p>
+              <p><strong>The Key:</strong> You provide a 26-digit numeric key (e.g., "215..."). If you're encrypting and don't provide one, a random key is generated.</p>
+              <p><strong>Initial Alphabet:</strong> The process starts with the standard alphabet: "abcdefghijklmnopqrstuvwxyz".</p>
+              <p><strong>Sequential Scrambling:</strong></p>
+              <ul className="list-disc list-inside pl-4 space-y-1">
+                <li>The first digit of your key determines how 'a' is moved. 'a' is found in the current (initially standard) alphabet, removed, and then re-inserted that many positions to its right (wrapping around if it goes past 'z'). The alphabet is now slightly scrambled.</li>
+                <li>The second digit of your key determines how 'b' is moved. 'b' is found in this newly modified alphabet, removed, and re-inserted according to the second key digit. The alphabet becomes more scrambled.</li>
+                <li>This process continues for all 26 letters of the original alphabet, from 'a' to 'z', using each of the 26 digits in your key sequentially. Each step modifies the alphabet that the next step will use.</li>
+              </ul>
+              <p><strong>Final Substitution:</strong> After all 26 steps, the result is a completely scrambled alphabet. This final scrambled alphabet is then used for direct substitution. For example, to encrypt, 'a' becomes the first letter of the scrambled alphabet, 'b' becomes the second, and so on. Decryption reverses this mapping.</p>
+              <p>This sequential, stateful scrambling ensures that every key produces a unique one-to-one mapping between the plain alphabet and the cipher alphabet, allowing for clear encryption and decryption.</p>
+            </AccordionContent>
+          </AccordionItem>
+        </Accordion>
+
       </CardContent>
     </Card>
   );

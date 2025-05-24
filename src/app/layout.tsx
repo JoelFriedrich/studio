@@ -5,7 +5,7 @@ import './globals.css';
 import { Toaster } from "@/components/ui/toaster"; // Import Toaster
 
 export const metadata: Metadata = {
-  title: 'Cryptic Messenger',
+  title: "Caesar's Sister",
   description: 'Encode and decode messages with a custom cipher.',
 };
 
