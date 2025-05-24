@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
@@ -38,10 +39,9 @@ export default function CrypticMessengerForm() {
       randomKey += Math.floor(Math.random() * 10).toString();
     }
     setKey(randomKey);
-    setError(null);
+    // Don't clear error here, applyCipher will validate the new key
   }, []);
 
-  // Automatically generate a key on mount if in encode mode and key is empty
   useEffect(() => {
     if (mode === "encode" && key === "") {
       generateRandomKey();
@@ -52,47 +52,66 @@ export default function CrypticMessengerForm() {
     if (key.length !== 26 || !/^\d{26}$/.test(key)) {
       setError("Key must be 26 digits.");
       toast({
-        title: "Invalid Key",
+        title: "Invalid Key Format",
         description: "Cipher key must be exactly 26 digits.",
         variant: "destructive",
       });
       setResult("");
       return;
     }
-    setError(null);
+    // Clear format-related error if previous check passes
+    // Semantic error for non-permutation key will be set below if needed
+    // setError(null); // This might clear a valid non-permutation error too soon.
 
     const keyDigits = key.split("").map(Number);
-    let output = "";
+
+    // Validate if the key creates a permutation (reversible cipher)
+    const forwardMapValues = new Array(ALPHABET.length);
+    for (let i = 0; i < ALPHABET.length; i++) {
+      const shift = keyDigits[i];
+      forwardMapValues[i] = (i + shift) % ALPHABET.length;
+    }
+
+    const uniqueForwardMapOutputs = new Set(forwardMapValues);
+    const isPermutation = uniqueForwardMapOutputs.size === ALPHABET.length;
+
+    if (!isPermutation) {
+      const newError = "Invalid key: This key leads to ambiguous encryption and is not reversible. Please generate a new key or use a different one.";
+      setError(newError);
+      toast({
+        title: "Invalid Key for Reversible Cipher",
+        description: "The current key creates ambiguities, making perfect decryption impossible. Please generate a new key.",
+        variant: "destructive",
+        duration: 7000,
+      });
+      setResult("");
+      return;
+    }
+
+    // If we reach here, the key is valid and produces a permutation.
+    setError(null); // Clear any errors
 
     const encodeMap = new Map<string, string>();
     const decodeMap = new Map<string, string>();
 
     for (let i = 0; i < ALPHABET.length; i++) {
       const originalChar = ALPHABET[i];
-      const shift = keyDigits[i];
-      const encodedCharIndex = (i + shift) % ALPHABET.length;
+      const encodedCharIndex = forwardMapValues[i]; // Use the precomputed, validated map
       const encodedChar = ALPHABET[encodedCharIndex];
       
       encodeMap.set(originalChar, encodedChar);
-      if (!decodeMap.has(encodedChar)) { // Prioritize first mapping in case of collision
-        decodeMap.set(encodedChar, originalChar);
-      }
+      decodeMap.set(encodedChar, originalChar); // Guaranteed unique because it's a permutation
     }
     
-    // Ensure all alphabet characters have a decode mapping (even if it means mapping to itself if no other char maps to it)
-    // This handles cases where the forward map isn't perfectly onto the alphabet for decoding.
-    // A more robust decode would require a bijective map or a different cipher definition.
-    // For this implementation, we prioritize original mappings.
-
+    let output = "";
     for (const char of message) {
       const charLower = char.toLowerCase();
-      let processedChar = char; // Default to original char if not in alphabet
+      let processedChar = char; 
 
       if (ALPHABET.includes(charLower)) {
         if (mode === "encode") {
           processedChar = encodeMap.get(charLower) || charLower;
         } else {
-          // Attempt to decode. If multiple chars could decode to this, this picks one based on map construction.
           processedChar = decodeMap.get(charLower) || charLower;
         }
         if (char === char.toUpperCase()) {
@@ -134,8 +153,8 @@ export default function CrypticMessengerForm() {
               value={mode}
               onValueChange={(value: "encode" | "decode") => {
                 setMode(value);
-                setResult(""); // Clear result when mode changes
-                setError(null);
+                setResult(""); 
+                // setError(null); // Error will be re-evaluated by applyCipher if key is problematic
                 if (value === 'encode' && key === "") {
                   generateRandomKey();
                 }
@@ -160,7 +179,12 @@ export default function CrypticMessengerForm() {
           </div>
           {mode === "encode" && (
             <Button
-              onClick={generateRandomKey}
+              onClick={() => {
+                generateRandomKey();
+                // When generating a new key, we expect applyCipher to validate it next.
+                // If the old key had an error, this new key might too.
+                // setError(null); // Let applyCipher manage the error state.
+              }}
               variant="outline"
               className="w-full sm:w-auto justify-self-start sm:justify-self-end rounded-md border-primary text-primary hover:bg-primary/10"
               aria-label="Generate random cipher key"
@@ -178,9 +202,13 @@ export default function CrypticMessengerForm() {
             placeholder="Enter 26-digit key"
             value={key}
             onChange={(e) => {
-              const val = e.target.value.replace(/[^0-9]/g, ''); // Allow only digits
+              const val = e.target.value.replace(/[^0-9]/g, ''); 
               if (val.length <= 26) {
                 setKey(val);
+                // If key changes, previous error about this key might not be valid.
+                // However, the new key might also be invalid.
+                // Validation will occur in applyCipher.
+                // if (error) setError(null); // Tentatively clear, applyCipher will re-set if needed
               }
             }}
             maxLength={26}
@@ -224,3 +252,4 @@ export default function CrypticMessengerForm() {
     </Card>
   );
 }
+
