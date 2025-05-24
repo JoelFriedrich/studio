@@ -26,7 +26,7 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
-import { Lock, Unlock, Shuffle, AlertTriangle, Info } from "lucide-react";
+import { Lock, Unlock, Shuffle, AlertTriangle, Info, Copy } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 const ALPHABET = "abcdefghijklmnopqrstuvwxyz";
@@ -76,48 +76,41 @@ export default function CrypticMessengerForm() {
     const keyDigits = key.split("").map(Number);
     let scrambledAlphabetChars = ALPHABET.split('');
 
-    // Sequentially scramble the alphabet based on the user's description
+    // Sequentially scramble the alphabet
     for (let i = 0; i < ALPHABET.length; i++) {
-      const originalLetterToMove = ALPHABET[i];
+      const originalLetterToMove = ALPHABET[i]; // e.g., 'a', then 'b', etc.
       const shiftAmount = keyDigits[i];
 
       const currentIndexInScrambled = scrambledAlphabetChars.indexOf(originalLetterToMove);
       if (currentIndexInScrambled === -1) {
-        // This should ideally not happen if logic is correct and array is managed properly
         setError(`Cipher logic error: letter ${originalLetterToMove} not found during scrambling.`);
         toast({ title: "Cipher Error", description: "An internal error occurred during alphabet scrambling.", variant: "destructive" });
         setResult("");
         return;
       }
 
-      // Remove the letter from its current position in the evolving scrambled list
+      // Remove the letter from its current position
       const letterToActuallyMove = scrambledAlphabetChars.splice(currentIndexInScrambled, 1)[0];
-
-      // Calculate new index for insertion (in the array of now 25 letters)
-      // The modulo operation ensures wrapping around the (now smaller) array.
-      const newInsertionIndex = (currentIndexInScrambled + shiftAmount) % scrambledAlphabetChars.length;
-
+      
+      // Calculate new index for insertion. The array is now 1 shorter.
+      let newInsertionIndex;
+      if (scrambledAlphabetChars.length === 0) { // Last letter being placed
+        newInsertionIndex = 0;
+      } else {
+        newInsertionIndex = (currentIndexInScrambled + shiftAmount) % scrambledAlphabetChars.length;
+        // If newInsertionIndex is 0 due to modulo of length, it means it should go to the end of current list to simulate wrapping
+        if (newInsertionIndex === 0 && (currentIndexInScrambled + shiftAmount) >= scrambledAlphabetChars.length && scrambledAlphabetChars.length > 0 ) {
+             // This specific condition attempts to place it at the "end" if it wraps exactly to the start
+             // but it's often simpler to just splice at the modulo result, as splice(N, 0, el) adds at N.
+             // If N = length, it appends.
+             if((currentIndexInScrambled + shiftAmount) % (scrambledAlphabetChars.length +1) === 0 && (currentIndexInScrambled + shiftAmount) > 0){
+                newInsertionIndex = scrambledAlphabetChars.length; // Place at the end
+             }
+        }
+      }
+      
       // Insert the letter at the new position
-      // If newInsertionIndex is 0 and shiftAmount was also 0 (or multiple of 25), 
-      // and it was removed from index 0, it means it should be placed at the end
-      // if the intent is "move 0 means it lands at the end of the 25-char list before reinsertion".
-      // However, typical modulo arithmetic (current_pos + shift) % N places it within 0 to N-1.
-      // If the target index is the length of the array, it means it should be appended.
-      if (newInsertionIndex === 0 && scrambledAlphabetChars.length > 0) {
-         // If target is 0, but we removed a letter, current list is 25.
-         // (original_index + shift) % 25. E.g., if original_index + shift was 25, result is 0.
-         // This needs to be thought through carefully for edge cases.
-         // The provided example "bcadef..." for A moving 2 implies new position 2.
-         // 'a' at index 0, shift 2. (0+2) % 25 = 2. Insert at 2. [b,c,a,d,e...]
-         // 'b' at index 0 (in "cbadef..."), shift 1. (0+1)%24 = 1. Insert at 1. [c,b,a,d,e...] -> Correct for "cbadef"
-         // 'c' at index 0 (in "badefc..."), shift 5. (0+5)%23 = 5. Insert at 5. [b,a,d,e,f,c,...] -> Correct for "badefc"
-         scrambledAlphabetChars.splice(newInsertionIndex, 0, letterToActuallyMove);
-      } else if (scrambledAlphabetChars.length === 0) { // last letter being placed
-        scrambledAlphabetChars.push(letterToActuallyMove);
-      }
-      else {
-        scrambledAlphabetChars.splice(newInsertionIndex, 0, letterToActuallyMove);
-      }
+      scrambledAlphabetChars.splice(newInsertionIndex, 0, letterToActuallyMove);
     }
 
     const finalScrambledAlphabet = scrambledAlphabetChars.join('');
@@ -150,12 +143,30 @@ export default function CrypticMessengerForm() {
 
   }, [message, key, mode, toast]);
 
+  const handleCopyResult = async () => {
+    if (!result) return;
+    try {
+      await navigator.clipboard.writeText(result);
+      toast({
+        title: "Result Copied!",
+        description: "The processed message has been copied to your clipboard.",
+        variant: "default",
+      });
+    } catch (err) {
+      console.error("Failed to copy result: ", err);
+      toast({
+        title: "Copy Failed",
+        description: "Could not copy the result to the clipboard.",
+        variant: "destructive",
+      });
+    }
+  };
 
   return (
     <Card className="w-full max-w-xl shadow-xl rounded-lg">
       <CardHeader className="text-center">
         <CardTitle className="text-3xl font-semibold text-primary">
-          Caesar's Sister Cipher
+          Caesar's Sister
         </CardTitle>
         <CardDescription className="text-muted-foreground">
           Encode and decode messages with your unique key.
@@ -181,7 +192,8 @@ export default function CrypticMessengerForm() {
               value={mode}
               onValueChange={(value: "encode" | "decode") => {
                 setMode(value);
-                setResult("");
+                setMessage(""); // Clear message input
+                // Result field is intentionally not cleared
                 setError(null);
                 if (value === 'encode' && key === "") {
                   generateRandomKey();
@@ -262,7 +274,20 @@ export default function CrypticMessengerForm() {
         </Button>
 
         <div className="space-y-2">
-          <Label htmlFor="result" className="font-medium">Result</Label>
+          <div className="flex justify-between items-center">
+            <Label htmlFor="result" className="font-medium">Result</Label>
+            {result && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleCopyResult}
+                aria-label="Copy result to clipboard"
+                className="px-2 py-1 h-auto text-xs text-muted-foreground hover:text-accent-foreground"
+              >
+                <Copy className="mr-1 h-3 w-3" /> Copy
+              </Button>
+            )}
+          </div>
           <Textarea
             id="result"
             placeholder="Processed message will appear here..."
@@ -278,7 +303,7 @@ export default function CrypticMessengerForm() {
             <AccordionTrigger className="text-base hover:no-underline">
               <div className="flex items-center">
                 <Info className="mr-2 h-5 w-5 text-primary" />
-                How Caesar's Sister Cipher Works
+                How Caesar's Sister Works
               </div>
             </AccordionTrigger>
             <AccordionContent className="text-sm text-muted-foreground space-y-3 pt-2">
@@ -301,3 +326,5 @@ export default function CrypticMessengerForm() {
     </Card>
   );
 }
+
+    
