@@ -34,14 +34,18 @@ export default function CrypticMessengerForm() {
   const { toast } = useToast();
 
   const generateRandomKey = useCallback(() => {
-    const newKey = Array.from({ length: 26 }, () => Math.floor(Math.random() * 10)).join('');
+    // Reverted to original: generates 26 random digits (0-9)
+    const newKey = Array.from({ length: 26 }, () =>
+      Math.floor(Math.random() * 10)
+    ).join("");
     setKey(newKey);
-    setError(null); // Clear previous errors; applyCipher will validate.
+    setError(null);
     toast({
       title: "New Random Key Generated",
-      description: "This key will be validated for reversibility upon use.",
+      description:
+        "This key will be validated for reversibility upon use. Many random digit keys may not form a reversible cipher with the current logic.",
       variant: "default",
-      duration: 5000,
+      duration: 7000,
     });
   }, [toast]);
 
@@ -64,17 +68,18 @@ export default function CrypticMessengerForm() {
     }
 
     const keyDigits = key.split("").map(Number);
-    
-    // Step 1: Construct the effective cipher alphabet based on myFunction's logic
+
+    // Step 1: Construct the cipherAlphabetArray based on myFunction's logic
     // cipherAlphabetArray[targetIndex] = originalPlainChar
+    // This means ALPHABET[i] (plainChar) is placed at targetIndex in the cipherAlphabetArray.
     const cipherAlphabetArray = new Array(ALPHABET.length).fill(null);
     let isKeyValidForPermutation = true;
 
     for (let i = 0; i < ALPHABET.length; i++) {
       const plainChar = ALPHABET[i]; // The original character e.g. 'a', 'b', ...
       const shiftAmount = keyDigits[i]; // The shift from the key for this plainChar
-      // targetIndexOfPlainCharInCipherAlphabet is where plainChar lands in the cipher alphabet structure
-      const targetIndexOfPlainCharInCipherAlphabet = (ALPHABET.indexOf(plainChar) + shiftAmount) % ALPHABET.length;
+      const targetIndexOfPlainCharInCipherAlphabet =
+        (ALPHABET.indexOf(plainChar) + shiftAmount) % ALPHABET.length;
 
       if (cipherAlphabetArray[targetIndexOfPlainCharInCipherAlphabet] !== null) {
         // Collision: Another plainChar already mapped to this targetIndex.
@@ -85,12 +90,19 @@ export default function CrypticMessengerForm() {
     }
 
     // Step 2: Validate if the generated cipherAlphabetArray forms a valid permutation
-    if (!isKeyValidForPermutation || cipherAlphabetArray.some(char => char === null)) {
-      const newError = "Invalid key: This key leads to ambiguous encryption (not all characters map uniquely or some are missing) and is not reversible. Please generate a new key or use a different one.";
+    // It must have no collisions (checked by isKeyValidForPermutation)
+    // and all positions must be filled (no nulls).
+    if (
+      !isKeyValidForPermutation ||
+      cipherAlphabetArray.some((char) => char === null)
+    ) {
+      const newError =
+        "Invalid key: This key leads to ambiguous encryption (not all characters map uniquely or some are missing) and is not reversible. Please generate a new key or use a different one.";
       setError(newError);
       toast({
         title: "Invalid Key for Reversible Cipher",
-        description: "The current key creates ambiguities or missing mappings, making perfect decryption impossible. Please generate a new key or use a different one.",
+        description:
+          "The current key creates ambiguities or missing mappings, making perfect decryption impossible. Many random digit keys will fail this check. Please generate a new key or use a different one.",
         variant: "destructive",
         duration: 7000,
       });
@@ -99,33 +111,36 @@ export default function CrypticMessengerForm() {
     }
 
     setError(null);
-    const finalCipherAlphabetString = cipherAlphabetArray.join(''); // e.g., "cab" if ALPHABET="abc" and key="111"
+    // finalCipherAlphabetString is the result of myFunction's construction.
+    // finalCipherAlphabetString[j] is the *original* ALPHABET letter that maps to cipher position j.
+    const finalCipherAlphabetString = cipherAlphabetArray.join("");
 
     // Step 3: Build encode and decode maps
-    // encodeMap: plainChar -> finalCipherAlphabetString[indexOfPlainChar]
-    // decodeMap: finalCipherAlphabetString[indexOfPlainChar] -> plainChar
+    // If finalCipherAlphabetString[j] = s_j (an original char), then s_j encrypts to ALPHABET[j].
     const encodeMap = new Map<string, string>();
     const decodeMap = new Map<string, string>();
 
-    for (let i = 0; i < ALPHABET.length; i++) {
-      const plainChar = ALPHABET[i];
-      const encodedChar = finalCipherAlphabetString[i]; // ALPHABET[i] encrypts to the i-th char of our derived cipher string
-      
-      encodeMap.set(plainChar, encodedChar);
-      decodeMap.set(encodedChar, plainChar);
+    for (let j = 0; j < ALPHABET.length; j++) {
+      const originalLetterThatLandsAtJ = finalCipherAlphabetString[j]; // This is s_j
+      const standardAlphabetLetterForOutput = ALPHABET[j];           // This is ALPHABET[j]
+
+      // encodeMap: originalChar -> encryptedChar
+      encodeMap.set(originalLetterThatLandsAtJ, standardAlphabetLetterForOutput);
+      // decodeMap: encryptedChar -> originalChar
+      decodeMap.set(standardAlphabetLetterForOutput, originalLetterThatLandsAtJ);
     }
-    
+
     // Step 4: Apply the cipher to the message
     let output = "";
     for (const char of message) {
       const charLower = char.toLowerCase();
-      let processedChar = char; 
+      let processedChar = char;
 
       if (ALPHABET.includes(charLower)) {
         if (mode === "encode") {
-          processedChar = encodeMap.get(charLower) || charLower;
+          processedChar = encodeMap.get(charLower) || charLower; // Fallback should ideally not happen if maps are complete
         } else {
-          processedChar = decodeMap.get(charLower) || charLower;
+          processedChar = decodeMap.get(charLower) || charLower; // Fallback should ideally not happen
         }
         if (char === char.toUpperCase()) {
           processedChar = processedChar.toUpperCase();
@@ -166,7 +181,8 @@ export default function CrypticMessengerForm() {
               value={mode}
               onValueChange={(value: "encode" | "decode") => {
                 setMode(value);
-                setResult(""); 
+                setResult("");
+                setError(null); // Clear error when mode changes
                 if (value === 'encode' && key === "") {
                   generateRandomKey();
                 }
@@ -209,9 +225,10 @@ export default function CrypticMessengerForm() {
             placeholder="Enter 26-digit key"
             value={key}
             onChange={(e) => {
-              const val = e.target.value.replace(/[^0-9]/g, ''); 
+              const val = e.target.value.replace(/[^0-9]/g, "");
               if (val.length <= 26) {
                 setKey(val);
+                setError(null); // Clear error when key changes
               }
             }}
             maxLength={26}
