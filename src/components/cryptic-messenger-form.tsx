@@ -26,7 +26,7 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
-import { Lock, Unlock, Shuffle, AlertTriangle, Info, Copy } from "lucide-react";
+import { Lock, Unlock, Shuffle, AlertTriangle, Info, Copy, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 const ALPHABET = "abcdefghijklmnopqrstuvwxyz";
@@ -48,7 +48,7 @@ export default function CrypticMessengerForm() {
     toast({
       title: "New Random Key Generated",
       description:
-        "This key uses a sequential scrambling cipher method, which is always reversible.",
+        "This key uses a sequential scrambling cipher method, which is always reversible. Use it to encode your message.",
       variant: "default",
       duration: 5000,
     });
@@ -78,11 +78,12 @@ export default function CrypticMessengerForm() {
 
     // Sequentially scramble the alphabet
     for (let i = 0; i < ALPHABET.length; i++) {
-      const originalLetterToMove = ALPHABET[i]; // e.g., 'a', then 'b', etc.
+      const originalLetterToMove = ALPHABET[i]; 
       const shiftAmount = keyDigits[i];
 
       const currentIndexInScrambled = scrambledAlphabetChars.indexOf(originalLetterToMove);
       if (currentIndexInScrambled === -1) {
+        // This should ideally not happen if logic is correct and ALPHABET is standard
         setError(`Cipher logic error: letter ${originalLetterToMove} not found during scrambling.`);
         toast({ title: "Cipher Error", description: "An internal error occurred during alphabet scrambling.", variant: "destructive" });
         setResult("");
@@ -92,21 +93,20 @@ export default function CrypticMessengerForm() {
       // Remove the letter from its current position
       const letterToActuallyMove = scrambledAlphabetChars.splice(currentIndexInScrambled, 1)[0];
       
-      // Calculate new index for insertion. The array is now 1 shorter.
+      // Calculate new index for insertion. The array is now 1 shorter (length 25).
       let newInsertionIndex;
       if (scrambledAlphabetChars.length === 0) { // Last letter being placed
         newInsertionIndex = 0;
       } else {
+        // Modulo by current length of the array (which is 25 when one char is removed, until the very last step)
         newInsertionIndex = (currentIndexInScrambled + shiftAmount) % scrambledAlphabetChars.length;
-        // If newInsertionIndex is 0 due to modulo of length, it means it should go to the end of current list to simulate wrapping
-        if (newInsertionIndex === 0 && (currentIndexInScrambled + shiftAmount) >= scrambledAlphabetChars.length && scrambledAlphabetChars.length > 0 ) {
-             // This specific condition attempts to place it at the "end" if it wraps exactly to the start
-             // but it's often simpler to just splice at the modulo result, as splice(N, 0, el) adds at N.
-             // If N = length, it appends.
-             if((currentIndexInScrambled + shiftAmount) % (scrambledAlphabetChars.length +1) === 0 && (currentIndexInScrambled + shiftAmount) > 0){
-                newInsertionIndex = scrambledAlphabetChars.length; // Place at the end
-             }
-        }
+         // This adjustment handles the case where the modulo result is 0 due to exact multiple of array length,
+         // but it should effectively be at the end of the (current_length - 1) conceptual array.
+         // E.g. if current array is ['b','c','d'] (length 3) and index 0 ('b') shifts by 3,
+         // (0+3)%3 = 0. It should go after 'd'. Splice(3,0, el) inserts at end.
+         if (newInsertionIndex === 0 && (currentIndexInScrambled + shiftAmount) > 0 && (currentIndexInScrambled + shiftAmount) % scrambledAlphabetChars.length === 0) {
+            newInsertionIndex = scrambledAlphabetChars.length;
+         }
       }
       
       // Insert the letter at the new position
@@ -143,6 +143,25 @@ export default function CrypticMessengerForm() {
 
   }, [message, key, mode, toast]);
 
+  const handleCopyMessage = async () => {
+    if (!message) return;
+    try {
+      await navigator.clipboard.writeText(message);
+      toast({
+        title: "Message Copied!",
+        description: "The original message has been copied to your clipboard.",
+        variant: "default",
+      });
+    } catch (err) {
+      console.error("Failed to copy message: ", err);
+      toast({
+        title: "Copy Failed",
+        description: "Could not copy the message to the clipboard.",
+        variant: "destructive",
+      });
+    }
+  };
+
   const handleCopyResult = async () => {
     if (!result) return;
     try {
@@ -174,7 +193,33 @@ export default function CrypticMessengerForm() {
       </CardHeader>
       <CardContent className="space-y-6 p-6">
         <div className="space-y-2">
-          <Label htmlFor="message" className="font-medium">Message</Label>
+          <div className="flex justify-between items-center">
+            <Label htmlFor="message" className="font-medium">Message</Label>
+            <div className="flex items-center space-x-1">
+              {message && (
+                <>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleCopyMessage}
+                    aria-label="Copy message to clipboard"
+                    className="px-2 py-1 h-auto text-xs text-muted-foreground hover:text-accent-foreground"
+                  >
+                    <Copy className="mr-1 h-3 w-3" /> Copy
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setMessage("")}
+                    aria-label="Clear message field"
+                    className="px-2 py-1 h-auto text-xs text-muted-foreground hover:text-destructive"
+                  >
+                    <Trash2 className="mr-1 h-3 w-3" /> Clear
+                  </Button>
+                </>
+              )}
+            </div>
+          </div>
           <Textarea
             id="message"
             placeholder="Enter your message here..."
@@ -192,7 +237,7 @@ export default function CrypticMessengerForm() {
               value={mode}
               onValueChange={(value: "encode" | "decode") => {
                 setMode(value);
-                setMessage(""); // Clear message input
+                setMessage(""); // Clear message field on mode change
                 // Result field is intentionally not cleared
                 setError(null);
                 if (value === 'encode' && key === "") {
@@ -276,17 +321,30 @@ export default function CrypticMessengerForm() {
         <div className="space-y-2">
           <div className="flex justify-between items-center">
             <Label htmlFor="result" className="font-medium">Result</Label>
-            {result && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleCopyResult}
-                aria-label="Copy result to clipboard"
-                className="px-2 py-1 h-auto text-xs text-muted-foreground hover:text-accent-foreground"
-              >
-                <Copy className="mr-1 h-3 w-3" /> Copy
-              </Button>
-            )}
+            <div className="flex items-center space-x-1">
+              {result && (
+                <>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleCopyResult}
+                    aria-label="Copy result to clipboard"
+                    className="px-2 py-1 h-auto text-xs text-muted-foreground hover:text-accent-foreground"
+                  >
+                    <Copy className="mr-1 h-3 w-3" /> Copy
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setResult("")}
+                    aria-label="Clear result field"
+                    className="px-2 py-1 h-auto text-xs text-muted-foreground hover:text-destructive"
+                  >
+                    <Trash2 className="mr-1 h-3 w-3" /> Clear
+                  </Button>
+                </>
+              )}
+            </div>
           </div>
           <Textarea
             id="result"
@@ -326,5 +384,3 @@ export default function CrypticMessengerForm() {
     </Card>
   );
 }
-
-    
